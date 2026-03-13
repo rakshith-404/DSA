@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AVL Tree Visualizer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    h1 {
+      margin: 24px 0 8px;
+      font-size: 1.6rem;
+      letter-spacing: 1px;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin: 16px 0;
+      align-items: center;
+    }
+
+    input[type="number"] {
+      width: 140px;
+      padding: 10px 14px;
+      border: 2px solid #16213e;
+      border-radius: 8px;
+      background: #0f3460;
+      color: #eee;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color .2s;
+    }
+
+    input[type="number"]:focus { border-color: #e94560; }
+
+    button {
+      padding: 10px 22px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background .2s, transform .1s;
+    }
+
+    button:active { transform: scale(.96); }
+
+    .btn-insert { background: #e94560; color: #fff; }
+    .btn-insert:hover { background: #c73550; }
+
+    .btn-clear { background: #16213e; color: #aaa; }
+    .btn-clear:hover { background: #1a2744; color: #eee; }
+
+    .info {
+      font-size: .85rem;
+      color: #888;
+      margin-bottom: 8px;
+    }
+
+    .preorder {
+      background: #16213e;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-family: 'Courier New', monospace;
+      font-size: .95rem;
+      min-height: 28px;
+      max-width: 80vw;
+      word-break: break-all;
+      text-align: center;
+    }
+
+    #tree-container {
+      flex: 1;
+      width: 100%;
+      overflow: auto;
+      display: flex;
+      justify-content: center;
+      margin-top: 16px;
+    }
+
+    svg text {
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      font-weight: 600;
+    }
+
+    .node-circle {
+      transition: fill .3s;
+    }
+
+    .node-new {
+      animation: pop .4s ease;
+    }
+
+    @keyframes pop {
+      0%   { r: 0; opacity: 0; }
+      60%  { r: 26; opacity: 1; }
+      100% { r: 22; }
+    }
+
+    .edge {
+      stroke: #0f3460;
+      stroke-width: 2;
+      transition: all .3s;
+    }
+  </style>
+</head>
+<body>
+  <h1>AVL Tree Visualizer</h1>
+
+  <div class="controls">
+    <input type="number" id="nodeValue" placeholder="Enter value" autofocus />
+    <button class="btn-insert" id="btnInsert">Insert</button>
+    <button class="btn-clear" id="btnClear">Clear</button>
+  </div>
+
+  <div class="info">Pre-order traversal:</div>
+  <div class="preorder" id="preorder">—</div>
+
+  <div id="tree-container">
+    <svg id="treeSvg"></svg>
+  </div>
+
+  <script>
+    // ==================== AVL Tree (mirrors your Java logic) ====================
+    class Node {
+      constructor(data) {
+        this.data = data;
+        this.left = null;
+        this.right = null;
+        this.height = 1;
+        this.isNew = false;
+      }
+    }
+
+    function getHeight(n) { return n ? n.height : 0; }
+
+    function getBF(n) { return n ? getHeight(n.left) - getHeight(n.right) : 0; }
+
+    function updateHeight(n) {
+      n.height = 1 + Math.max(getHeight(n.left), getHeight(n.right));
+    }
+
+    function rightRotate(y) {
+      const x = y.left;
+      const T2 = x.right;
+      x.right = y;
+      y.left = T2;
+      updateHeight(y);
+      updateHeight(x);
+      return x;
+    }
+
+    function leftRotate(x) {
+      const y = x.right;
+      const T2 = y.left;
+      y.left = x;
+      x.right = T2;
+      updateHeight(x);
+      updateHeight(y);
+      return y;
+    }
+
+    function insert(root, data) {
+      if (!root) {
+        const n = new Node(data);
+        n.isNew = true;
+        return n;
+      }
+      if (data <= root.data) {
+        root.left = insert(root.left, data);
+      } else {
+        root.right = insert(root.right, data);
+      }
+
+      updateHeight(root);
+
+      const bf = getBF(root);
+      if (bf === 2) {
+        if (getBF(root.left) >= 0) {
+          root = rightRotate(root);
+        } else {
+          root.left = leftRotate(root.left);
+          root = rightRotate(root);
+        }
+      } else if (bf === -2) {
+        if (getBF(root.right) <= 0) {
+          root = leftRotate(root);
+        } else {
+          root.right = rightRotate(root.right);
+          root = leftRotate(root);
+        }
+      }
+      return root;
+    }
+
+    function preOrder(node, arr) {
+      if (node) {
+        arr.push(node.data);
+        preOrder(node.left, arr);
+        preOrder(node.right, arr);
+      }
+    }
+
+    // ==================== Rendering ====================
+    const NODE_RADIUS = 22;
+    const H_GAP = 18;
+    const V_GAP = 64;
+
+    // Assign (x, y) positions using an in-order walk so nodes don't overlap.
+    function assignPositions(node, depth, counter) {
+      if (!node) return counter;
+      counter = assignPositions(node.left, depth + 1, counter);
+      node._x = counter * (NODE_RADIUS * 2 + H_GAP) + NODE_RADIUS + 20;
+      node._y = depth * V_GAP + NODE_RADIUS + 20;
+      counter++;
+      counter = assignPositions(node.right, depth + 1, counter);
+      return counter;
+    }
+
+    function drawTree(root) {
+      const svg = document.getElementById('treeSvg');
+      svg.innerHTML = '';
+
+      if (!root) {
+        svg.setAttribute('width', 0);
+        svg.setAttribute('height', 0);
+        return;
+      }
+
+      const count = assignPositions(root, 0, 0);
+      const svgWidth = count * (NODE_RADIUS * 2 + H_GAP) + 40;
+      const treeHeight = getHeight(root);
+      const svgHeight = treeHeight * V_GAP + 40;
+      svg.setAttribute('width', svgWidth);
+      svg.setAttribute('height', svgHeight);
+
+      // Draw edges first (behind nodes)
+      drawEdges(svg, root);
+      // Draw nodes on top
+      drawNodes(svg, root);
+    }
+
+    function drawEdges(svg, node) {
+      if (!node) return;
+      if (node.left) {
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', node._x);
+        line.setAttribute('y1', node._y);
+        line.setAttribute('x2', node.left._x);
+        line.setAttribute('y2', node.left._y);
+        line.classList.add('edge');
+        svg.appendChild(line);
+        drawEdges(svg, node.left);
+      }
+      if (node.right) {
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', node._x);
+        line.setAttribute('y1', node._y);
+        line.setAttribute('x2', node.right._x);
+        line.setAttribute('y2', node.right._y);
+        line.classList.add('edge');
+        svg.appendChild(line);
+        drawEdges(svg, node.right);
+      }
+    }
+
+    function drawNodes(svg, node) {
+      if (!node) return;
+      drawNodes(svg, node.left);
+      drawNodes(svg, node.right);
+
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      circle.setAttribute('cx', node._x);
+      circle.setAttribute('cy', node._y);
+      circle.setAttribute('r', NODE_RADIUS);
+      circle.setAttribute('fill', '#e94560');
+      circle.classList.add('node-circle');
+      if (node.isNew) {
+        circle.classList.add('node-new');
+        node.isNew = false;
+      }
+      svg.appendChild(circle);
+
+      // Balance factor label (small, above-right)
+      const bfLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      bfLabel.setAttribute('x', node._x + NODE_RADIUS + 4);
+      bfLabel.setAttribute('y', node._y - NODE_RADIUS + 6);
+      bfLabel.setAttribute('fill', '#888');
+      bfLabel.setAttribute('font-size', '11');
+      bfLabel.setAttribute('font-weight', '400');
+      bfLabel.textContent = `bf=${getBF(node)}`;
+      svg.appendChild(bfLabel);
+
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('x', node._x);
+      text.setAttribute('y', node._y + 5);
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('fill', '#fff');
+      text.setAttribute('font-size', '15');
+      text.textContent = node.data;
+      svg.appendChild(text);
+    }
+
+    // ==================== UI Wiring ====================
+    let root = null;
+
+    function doInsert() {
+      const input = document.getElementById('nodeValue');
+      const val = parseInt(input.value, 10);
+      if (isNaN(val)) return;
+      root = insert(root, val);
+      render();
+      input.value = '';
+      input.focus();
+    }
+
+    function render() {
+      drawTree(root);
+      const arr = [];
+      preOrder(root, arr);
+      document.getElementById('preorder').textContent = arr.length ? arr.join('  ') : '—';
+    }
+
+    document.getElementById('btnInsert').addEventListener('click', doInsert);
+    document.getElementById('nodeValue').addEventListener('keydown', e => {
+      if (e.key === 'Enter') doInsert();
+    });
+    document.getElementById('btnClear').addEventListener('click', () => {
+      root = null;
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>
